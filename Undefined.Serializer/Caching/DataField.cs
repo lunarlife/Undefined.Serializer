@@ -75,7 +75,12 @@ internal class DataField
 
     public string Name { get; }
 
-    public int GetSize(object o, bool compressed) => FieldCachedType.GetSize(o, compressed);
+    public int GetSize(object o, bool compressed)
+    {
+        var size = FieldCachedType.GetSize(GetValue(o), compressed);
+        if (DataFieldId is not null) size++;
+        return size;
+    }
 
     public object? GetValue(object obj) => IsDataField
         ? _valueField!.GetValue(_fieldInfo.GetValue(obj)!)

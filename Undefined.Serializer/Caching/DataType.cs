@@ -93,13 +93,13 @@ internal class DataType
         var defaultFields = new List<DataField>();
         var dataFields = new List<DataField>();
         var baseType = type;
-        while (baseType != null && baseType != typeof(object))
+        while (baseType != null && baseType != typeof(object) && baseType != typeof(ValueType))
         {
             var att = baseType.GetCustomAttribute<DataConvertParamAttribute>()?.Types;
             if (att is null || att.Value.HasFlag(IncludeDataType.Property))
             {
                 var properties =
-                    type.GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
+                    type.GetProperties(BindingFlags.Public | BindingFlags.DeclaredOnly | BindingFlags.Instance | BindingFlags.NonPublic);
                 for (var i = 0; i < properties.Length; i++)
                 {
                     var prop = properties[i];
@@ -118,10 +118,9 @@ internal class DataType
 
             if (att is null || att.Value.HasFlag(IncludeDataType.Field))
             {
-                var fields = type.GetFields(BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
-                for (var i = 0; i < fields.Length; i++)
+                var fields = type.GetFields(BindingFlags.Public | BindingFlags.DeclaredOnly | BindingFlags.Instance | BindingFlags.NonPublic);
+                foreach (var f in fields)
                 {
-                    var f = fields[i];
                     if (RuntimeUtils.TryGetAttribute<ExcludeDataAttribute>(f, out _)) continue;
                     if (RuntimeUtils.TryGetAttribute<CompilerGeneratedAttribute>(f, out _))
                         continue;

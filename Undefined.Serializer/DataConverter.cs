@@ -37,8 +37,18 @@ public sealed class DataConverter
         }
     }
 
-    public unsafe void Serialize(object? obj, ref byte* buffer, bool compressed)
+    internal unsafe void Serialize(object? obj, ref byte* buffer, bool compressed)
     {
+        if (obj is null)
+        {
+            WriteObjectInfo(buffer, compressed, true);
+            return;
+        }
+        
+        var type = obj.GetType();
+        var dataType = GetDataType(type);
+        if (obj is ISerializeHandler h) h.OnSerialize();
+        dataType.Serialize(obj, ref buffer, compressed);
     }
 
     public unsafe object? Deserialize(Type type, ref byte* buffer,
@@ -125,7 +135,7 @@ public sealed class DataConverter
     }
 
     private DataType CreateDataType(Type type)
-    {
+    { 
         var converter = GetConverterForType(type);
         var dataType = new DataType(type, this, converter);
         _types.Add(dataType.Type, dataType);

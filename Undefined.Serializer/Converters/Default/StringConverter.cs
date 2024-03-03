@@ -55,9 +55,6 @@ public sealed class StringConverter : ICompressibleConverter<string>
             return deserialize;
         }
 
-        /*
-        if (index + 1 >= buffer.Length)
-            throw new ConverterException("End bytes of string not found.");*/
         if (*buffer == 0 && *(buffer + 1) == 0)
         {
             buffer += 2;
@@ -74,9 +71,9 @@ public sealed class StringConverter : ICompressibleConverter<string>
         }
 
         if (stringLen == 1) return string.Empty;
-        var length = stringLen + 2;
+        var length = stringLen;
         var str = new string((char*)buffer, 0, length / 2);
-        buffer += stringLen;
+        buffer += stringLen + 2;
         return str;
     }
 
