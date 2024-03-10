@@ -1,9 +1,9 @@
 namespace Undefined.Serializer.Configuration;
 
 [AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct)]
-public class DataConvertParamAttribute : Attribute
+public sealed class ConverterParamsAttribute : Attribute
 {
-    public DataConvertParamAttribute(IncludeDataType types)
+    public ConverterParamsAttribute(IncludeDataType types)
     {
         Types = types;
     }

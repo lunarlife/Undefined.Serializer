@@ -31,24 +31,80 @@ public sealed class DataConverter
             fixed (byte* b = array)
             {
                 var buffer = b;
-                dataType.Serialize(obj, ref buffer, compressed);
+                dataType.Serialize(obj, ref buffer, compressed, switcher, converterUsing);
             }
+
             return array;
         }
     }
 
-    internal unsafe void Serialize(object? obj, ref byte* buffer, bool compressed)
+    internal unsafe void Serialize(object? obj, byte[] buffer, int index, bool compressed,
+        SwitcherSettings? switcher = null,
+        ConverterUsing converterUsing = ConverterUsing.All)
+    {
+        if (obj is null)
+        {
+            FlushInfo(buffer, index, compressed, true);
+            return;
+        }
+
+        var type = obj.GetType();
+        var dataType = GetDataType(type);
+        var size = dataType.GetSize(obj, compressed);
+        if (obj is ISerializeHandler h) h.OnSerialize();
+        if (buffer.Length - index < size)
+            throw new SerializeException($"Buffer has no empty space for object {obj.GetType().Name}.");
+        fixed (byte* b = buffer)
+        {
+            var bytes = b;
+            dataType.Serialize(obj, ref bytes, compressed, switcher, converterUsing);
+        }
+    }
+
+    internal unsafe void Serialize(object? obj, ref byte* buffer, bool compressed, SwitcherSettings? switcher = null,
+        ConverterUsing converterUsing = ConverterUsing.All)
     {
         if (obj is null)
         {
             WriteObjectInfo(buffer, compressed, true);
             return;
         }
-        
+
         var type = obj.GetType();
         var dataType = GetDataType(type);
         if (obj is ISerializeHandler h) h.OnSerialize();
-        dataType.Serialize(obj, ref buffer, compressed);
+        dataType.Serialize(obj, ref buffer, compressed, switcher, converterUsing);
+    }
+
+    internal unsafe void Serialize(object? obj, Span<byte> buffer, bool compressed, SwitcherSettings? switcher = null,
+        ConverterUsing converterUsing = ConverterUsing.All)
+    {
+        if (obj is null)
+        {
+            WriteObjectInfo((byte*)Unsafe.AsPointer(ref buffer[0]), compressed, true);
+            return;
+        }
+
+        var type = obj.GetType();
+        var dataType = GetDataType(type);
+        if (obj is ISerializeHandler h) h.OnSerialize();
+        fixed (byte* bytes = buffer)
+        {
+            var b = bytes;
+            dataType.Serialize(obj, ref b, compressed, switcher, converterUsing);
+        }
+    }
+
+    public unsafe object? Deserialize(Type type, Span<byte> buffer,
+        SwitcherSettings? switcher = null,
+        ConverterUsing converterUsing = ConverterUsing.All,
+        ConverterUsing invokeEvents = ConverterUsing.All)
+    {
+        fixed (byte* b = buffer)
+        {
+            var bytes = b;
+            return Deserialize(type, ref bytes, switcher, converterUsing, invokeEvents);
+        } 
     }
 
     public unsafe object? Deserialize(Type type, ref byte* buffer,
@@ -60,6 +116,7 @@ public sealed class DataConverter
         return dataType.Deserialize(type, ref buffer, switcher, converterUsing: converterUsing,
             invokeEvents: invokeEvents);
     }
+
     public unsafe T? Deserialize<T>(byte[] buffer, SwitcherSettings? switcher = null,
         ConverterUsing converterUsing = ConverterUsing.All,
         ConverterUsing invokeEvents = ConverterUsing.All)
@@ -70,6 +127,11 @@ public sealed class DataConverter
             return (T?)Deserialize(typeof(T), ref bytes, switcher, converterUsing, invokeEvents);
         }
     }
+
+    public unsafe T? Deserialize<T>(Span<byte> buffer, SwitcherSettings? switcher = null,
+        ConverterUsing converterUsing = ConverterUsing.All,
+        ConverterUsing invokeEvents = ConverterUsing.All) =>
+        (T?)Deserialize(typeof(T), buffer, switcher, converterUsing, invokeEvents);
 
     public unsafe T? Deserialize<T>(ref byte* buffer, SwitcherSettings? switcher = null,
         ConverterUsing converterUsing = ConverterUsing.All,
@@ -135,7 +197,7 @@ public sealed class DataConverter
     }
 
     private DataType CreateDataType(Type type)
-    { 
+    {
         var converter = GetConverterForType(type);
         var dataType = new DataType(type, this, converter);
         _types.Add(dataType.Type, dataType);

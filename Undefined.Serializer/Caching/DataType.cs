@@ -95,7 +95,7 @@ internal class DataType
         var baseType = type;
         while (baseType != null && baseType != typeof(object) && baseType != typeof(ValueType))
         {
-            var att = baseType.GetCustomAttribute<DataConvertParamAttribute>()?.Types;
+            var att = baseType.GetCustomAttribute<ConverterParamsAttribute>()?.Types;
             if (att is null || att.Value.HasFlag(IncludeDataType.Property))
             {
                 var properties =
@@ -103,7 +103,7 @@ internal class DataType
                 for (var i = 0; i < properties.Length; i++)
                 {
                     var prop = properties[i];
-                    if (RuntimeUtils.TryGetAttribute<ExcludeDataAttribute>(prop, out _)) continue;
+                    if (RuntimeUtils.TryGetAttribute<ExcludeAttribute>(prop, out _)) continue;
                     int? switcher = null;
                     if (prop.GetCustomAttribute<DataSwitchAttribute>(true) is { } s) switcher = s.Id;
                     if (prop.GetBackingField() is not { } backingField)
@@ -121,7 +121,7 @@ internal class DataType
                 var fields = type.GetFields(BindingFlags.Public | BindingFlags.DeclaredOnly | BindingFlags.Instance | BindingFlags.NonPublic);
                 foreach (var f in fields)
                 {
-                    if (RuntimeUtils.TryGetAttribute<ExcludeDataAttribute>(f, out _)) continue;
+                    if (RuntimeUtils.TryGetAttribute<ExcludeAttribute>(f, out _)) continue;
                     if (RuntimeUtils.TryGetAttribute<CompilerGeneratedAttribute>(f, out _))
                         continue;
                     int? switcher = null;
@@ -191,11 +191,13 @@ internal class DataType
                 {
                     var deserialize =
                         compressibleBase.Deserialize(type, ref buffer, compressed);
+                    if(deserialize is IDeserializeHandler handler) handler.OnDeserialize();
                     return deserialize;
                 }
                 case IConverter converterBase:
                 {
                     var deserialize = converterBase.Deserialize(type, ref buffer);
+                    if(deserialize is IDeserializeHandler handler) handler.OnDeserialize();
                     return deserialize;
                 }
             }
@@ -225,17 +227,20 @@ internal class DataType
             field.SetValue(ref o, deserialize);
         }
 
-        if (_dataFieldsCount == 0) return;
-        var count = *buffer++;
-        for (var i = 0; i < count; i++)
+        if (_dataFieldsCount != 0)
         {
-            var dataId = *buffer++;
-            var field = _fields[_fields.Length - _dataFieldsCount + dataId];
+            var count = *buffer++;
+            for (var i = 0; i < count; i++)
+            {
+                var dataId = *buffer++;
+                var field = _fields[_fields.Length - _dataFieldsCount + dataId];
 
-            var deserialize = field.FieldCachedType.Deserialize(field.FieldType, ref buffer,
-                switcherSettings, converterUsing, invokeEvents);
-            field.SetValue(ref o, deserialize);
+                var deserialize = field.FieldCachedType.Deserialize(field.FieldType, ref buffer,
+                    switcherSettings, converterUsing, invokeEvents);
+                field.SetValue(ref o, deserialize);
+            }
         }
+        if(o is IDeserializeHandler handler) handler.OnDeserialize();
     }
 
     private void GetInfo(byte b, out bool compressed, out bool isNull)

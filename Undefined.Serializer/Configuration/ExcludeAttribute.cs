@@ -1,13 +1,13 @@
 namespace Undefined.Serializer.Configuration;
 
 [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field)]
-public class ExcludeDataAttribute : Attribute
+public class ExcludeAttribute : Attribute
 {
-    public ExcludeDataAttribute()
+    public ExcludeAttribute()
     {
     }
 
-    public ExcludeDataAttribute(string dataName)
+    public ExcludeAttribute(string dataName)
     {
         DataName = dataName;
     }
