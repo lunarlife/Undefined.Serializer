@@ -21,7 +21,7 @@ public sealed unsafe class TypeConverter : ICompressibleConverter<Type>
         var typeName = Converter.Deserialize<string>(ref buffer)!;
         return GetType(assembly, typeName);
     }
-    
+
     public int GetSize(Type value, bool compressed) => Converter.SizeOf(value.Assembly.GetName().Name!, compressed) +
                                                        Converter.SizeOf(value.Name, compressed);
 

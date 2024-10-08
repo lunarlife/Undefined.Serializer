@@ -3,6 +3,8 @@ namespace Undefined.Serializer.Configuration;
 [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field)]
 public class ExcludeAttribute : Attribute
 {
+    public string DataName { get; }
+
     public ExcludeAttribute()
     {
     }
@@ -11,6 +13,4 @@ public class ExcludeAttribute : Attribute
     {
         DataName = dataName;
     }
-
-    public string DataName { get; }
 }

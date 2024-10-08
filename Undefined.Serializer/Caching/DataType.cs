@@ -7,12 +7,12 @@ namespace Undefined.Serializer.Caching;
 
 internal class DataType
 {
+    private readonly DataField[] _fields;
+    private readonly Func<object>? _instanceFunc;
+    private int _dataFieldsCount;
     public Type Type { get; }
     public DataConverter Converter { get; }
     public IConverterBase? TypeConverter { get; }
-    private readonly Func<object>? _instanceFunc;
-    private DataField[] _fields;
-    private int _dataFieldsCount;
 
     public DataType(Type type, DataConverter converter, IConverterBase? typeConverter)
     {
@@ -20,9 +20,7 @@ internal class DataType
         Converter = converter;
         TypeConverter = typeConverter;
         if (typeConverter is null)
-        {
             _instanceFunc = RuntimeUtils.IL_CreateInstanceMethodAsObject(type);
-        }
         else Type = typeConverter.ImplementationType;
 
         _fields = typeConverter is null ? FindFields(type) : Array.Empty<DataField>();
@@ -32,11 +30,14 @@ internal class DataType
     public unsafe void Serialize(object? o, ref byte* buffer, bool compressed,
         SwitcherSettings? switcherSettings = null, ConverterUsing converterUsing = ConverterUsing.All)
     {
-        Converter.WriteObjectInfo(buffer, compressed, o == null);
-        buffer++;
+        if (o is null || TypeConverter is ICompressibleConverter || Nullable.GetUnderlyingType(o.GetType()) != null)
+        {
+            Converter.WriteObjectInfo(buffer, compressed, o == null);
+            buffer++;
+        }
+
         if (o == null) return;
         if (PrepareConverter(ref converterUsing) is { } converter)
-        {
             switch (converter)
             {
                 case ICompressibleConverter compressibleBase:
@@ -52,7 +53,6 @@ internal class DataType
                 default:
                     return;
             }
-        }
         else
         {
             var dataCount = 0;
@@ -99,7 +99,8 @@ internal class DataType
             if (att is null || att.Value.HasFlag(IncludeDataType.Property))
             {
                 var properties =
-                    type.GetProperties(BindingFlags.Public | BindingFlags.DeclaredOnly | BindingFlags.Instance | BindingFlags.NonPublic);
+                    type.GetProperties(BindingFlags.Public | BindingFlags.DeclaredOnly | BindingFlags.Instance |
+                                       BindingFlags.NonPublic);
                 for (var i = 0; i < properties.Length; i++)
                 {
                     var prop = properties[i];
@@ -108,7 +109,7 @@ internal class DataType
                     if (prop.GetCustomAttribute<DataSwitchAttribute>(true) is { } s) switcher = s.Id;
                     if (prop.GetBackingField() is not { } backingField)
                         continue;
-                    var cachedField = new DataField(prop.Name, Converter.GetDataType(backingField.FieldType), switcher,
+                    var cachedField = new DataField(prop.Name, Converter, switcher,
                         backingField, dataFields.Count);
                     if (cachedField.IsDataField)
                         dataFields.Add(cachedField);
@@ -118,7 +119,8 @@ internal class DataType
 
             if (att is null || att.Value.HasFlag(IncludeDataType.Field))
             {
-                var fields = type.GetFields(BindingFlags.Public | BindingFlags.DeclaredOnly | BindingFlags.Instance | BindingFlags.NonPublic);
+                var fields = type.GetFields(BindingFlags.Public | BindingFlags.DeclaredOnly | BindingFlags.Instance |
+                                            BindingFlags.NonPublic);
                 foreach (var f in fields)
                 {
                     if (RuntimeUtils.TryGetAttribute<ExcludeAttribute>(f, out _)) continue;
@@ -126,7 +128,7 @@ internal class DataType
                         continue;
                     int? switcher = null;
                     if (f.GetCustomAttribute<DataSwitchAttribute>(true) is { } s) switcher = s.Id;
-                    var cachedField = new DataField(f.Name, Converter.GetDataType(f.FieldType), switcher, f,
+                    var cachedField = new DataField(f.Name, Converter, switcher, f,
                         dataFields.Count);
                     if (cachedField.IsDataField) dataFields.Add(cachedField);
                     else defaultFields.Add(cachedField);
@@ -176,36 +178,46 @@ internal class DataType
         return converter;
     }
 
-    public unsafe object? Deserialize(Type type, ref byte* buffer, SwitcherSettings? switcherSettings = null,
+    public unsafe object? Deserialize(Type type, ref byte* buffer,
+        SwitcherSettings? switcherSettings = null,
+        ConverterUsing converterUsing = ConverterUsing.All, ConverterUsing invokeEvents = ConverterUsing.All) =>
+        Deserialize(type, ref buffer, out _, switcherSettings, converterUsing, invokeEvents);
+
+    public unsafe object? Deserialize(Type type, ref byte* buffer, out int length,
+        SwitcherSettings? switcherSettings = null,
         ConverterUsing converterUsing = ConverterUsing.All, ConverterUsing invokeEvents = ConverterUsing.All)
 
     {
-        GetInfo(*buffer, out var compressed, out var isNull);
-        buffer++;
-        if (isNull) return null;
+        var compressed = false;
+        var start = buffer;
+        if (TypeConverter is ICompressibleConverter || Nullable.GetUnderlyingType(type) != null)
+        {
+            GetInfo(*buffer, out compressed, out var isNull);
+            buffer++;
+            if (isNull)
+            {
+                length = DataConverter.OBJECT_INFO_LENGTH;
+                return null;
+            }
+        }
+
         if (PrepareConverter(ref converterUsing) is { } converter)
         {
-            switch (converter)
+            var deserialize = converter switch
             {
-                case ICompressibleConverter compressibleBase:
-                {
-                    var deserialize =
-                        compressibleBase.Deserialize(type, ref buffer, compressed);
-                    if(deserialize is IDeserializeHandler handler) handler.OnDeserialize();
-                    return deserialize;
-                }
-                case IConverter converterBase:
-                {
-                    var deserialize = converterBase.Deserialize(type, ref buffer);
-                    if(deserialize is IDeserializeHandler handler) handler.OnDeserialize();
-                    return deserialize;
-                }
-            }
+                ICompressibleConverter compressibleBase => compressibleBase.Deserialize(type, ref buffer, compressed),
+                IConverter converterBase => converterBase.Deserialize(type, ref buffer),
+                _ => null
+            };
+            if (deserialize is IDeserializeHandler handler) handler.OnDeserialize();
+            length = (int)(buffer - start);
+            return deserialize;
         }
 
         var obj = _instanceFunc!();
         DeserializeInjectInternal(ref obj, ref buffer, switcherSettings, converterUsing,
             invokeEvents);
+        length = (int)(buffer - start);
         return obj;
     }
 
@@ -240,7 +252,8 @@ internal class DataType
                 field.SetValue(ref o, deserialize);
             }
         }
-        if(o is IDeserializeHandler handler) handler.OnDeserialize();
+
+        if (o is IDeserializeHandler handler) handler.OnDeserialize();
     }
 
     private void GetInfo(byte b, out bool compressed, out bool isNull)

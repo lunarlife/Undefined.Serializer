@@ -22,7 +22,7 @@ public sealed class DataConverter
         unsafe
         {
             if (obj is null)
-                return FlushInfo(new byte[1], 0, compressed, true);
+                return WriteObjectInfo(new byte[1], 0, compressed, true);
             var type = obj.GetType();
             var dataType = GetDataType(type);
             var size = dataType.GetSize(obj, compressed);
@@ -38,14 +38,37 @@ public sealed class DataConverter
         }
     }
 
-    internal unsafe void Serialize(object? obj, byte[] buffer, int index, bool compressed,
+    public unsafe int SerializeUnsafe(object? obj, byte[] buffer, int index, bool compressed,
         SwitcherSettings? switcher = null,
         ConverterUsing converterUsing = ConverterUsing.All)
     {
         if (obj is null)
         {
-            FlushInfo(buffer, index, compressed, true);
-            return;
+            WriteObjectInfo(buffer, index, compressed, true);
+            return OBJECT_INFO_LENGTH;
+        }
+
+        var type = obj.GetType();
+        var dataType = GetDataType(type);
+        if (obj is ISerializeHandler h) h.OnSerialize();
+        fixed (byte* b = buffer)
+        {
+            var start = b + index;
+            var position = start;
+            dataType.Serialize(obj, ref position, compressed, switcher, converterUsing);
+            return (int)(position - start);
+        }
+    }
+
+
+    public unsafe int Serialize(object? obj, byte[] buffer, int index, bool compressed,
+        SwitcherSettings? switcher = null,
+        ConverterUsing converterUsing = ConverterUsing.All)
+    {
+        if (obj is null)
+        {
+            WriteObjectInfo(buffer, index, compressed, true);
+            return OBJECT_INFO_LENGTH;
         }
 
         var type = obj.GetType();
@@ -56,42 +79,47 @@ public sealed class DataConverter
             throw new SerializeException($"Buffer has no empty space for object {obj.GetType().Name}.");
         fixed (byte* b = buffer)
         {
-            var bytes = b;
-            dataType.Serialize(obj, ref bytes, compressed, switcher, converterUsing);
+            var start = b + index;
+            var position = start;
+            dataType.Serialize(obj, ref position, compressed, switcher, converterUsing);
+            return (int)(position - start);
         }
     }
 
-    internal unsafe void Serialize(object? obj, ref byte* buffer, bool compressed, SwitcherSettings? switcher = null,
+    public unsafe int Serialize(object? obj, ref byte* buffer, bool compressed, SwitcherSettings? switcher = null,
         ConverterUsing converterUsing = ConverterUsing.All)
     {
         if (obj is null)
         {
             WriteObjectInfo(buffer, compressed, true);
-            return;
+            return OBJECT_INFO_LENGTH;
         }
 
         var type = obj.GetType();
         var dataType = GetDataType(type);
         if (obj is ISerializeHandler h) h.OnSerialize();
+        var start = buffer;
         dataType.Serialize(obj, ref buffer, compressed, switcher, converterUsing);
+        return (int)(buffer - start);
     }
 
-    internal unsafe void Serialize(object? obj, Span<byte> buffer, bool compressed, SwitcherSettings? switcher = null,
+    internal unsafe int Serialize(object? obj, Span<byte> buffer, bool compressed, SwitcherSettings? switcher = null,
         ConverterUsing converterUsing = ConverterUsing.All)
     {
         if (obj is null)
         {
             WriteObjectInfo((byte*)Unsafe.AsPointer(ref buffer[0]), compressed, true);
-            return;
+            return OBJECT_INFO_LENGTH;
         }
 
         var type = obj.GetType();
         var dataType = GetDataType(type);
         if (obj is ISerializeHandler h) h.OnSerialize();
-        fixed (byte* bytes = buffer)
+        fixed (byte* start = buffer)
         {
-            var b = bytes;
-            dataType.Serialize(obj, ref b, compressed, switcher, converterUsing);
+            var position = start;
+            dataType.Serialize(obj, ref position, compressed, switcher, converterUsing);
+            return (int)(position - start);
         }
     }
 
@@ -102,33 +130,40 @@ public sealed class DataConverter
     {
         fixed (byte* b = buffer)
         {
-            var bytes = b;
-            return Deserialize(type, ref bytes, switcher, converterUsing, invokeEvents);
-        } 
+            return Deserialize(type, b, switcher, converterUsing, invokeEvents);
+        }
     }
 
     public unsafe object? Deserialize(Type type, ref byte* buffer,
         SwitcherSettings? switcher = null,
         ConverterUsing converterUsing = ConverterUsing.All,
-        ConverterUsing invokeEvents = ConverterUsing.All)
-    {
-        var dataType = GetDataType(RuntimeUtils.GetNotNullableType(type));
-        return dataType.Deserialize(type, ref buffer, switcher, converterUsing: converterUsing,
-            invokeEvents: invokeEvents);
-    }
+        ConverterUsing invokeEvents = ConverterUsing.All) =>
+        GetDataType(RuntimeUtils.GetNotNullableType(type)).Deserialize(type, ref buffer, switcher, converterUsing,
+            invokeEvents);
 
-    public unsafe T? Deserialize<T>(byte[] buffer, SwitcherSettings? switcher = null,
+    public unsafe object? Deserialize(Type type, byte* buffer,
+        SwitcherSettings? switcher = null,
+        ConverterUsing converterUsing = ConverterUsing.All,
+        ConverterUsing invokeEvents = ConverterUsing.All) =>
+        Deserialize(type, ref buffer, switcher, converterUsing,
+            invokeEvents);
+
+    public T? Deserialize<T>(byte[] buffer, SwitcherSettings? switcher = null,
+        ConverterUsing converterUsing = ConverterUsing.All,
+        ConverterUsing invokeEvents = ConverterUsing.All) =>
+        Deserialize<T>(buffer, 0, switcher, converterUsing, invokeEvents);
+
+    public unsafe T? Deserialize<T>(byte[] buffer, int index, SwitcherSettings? switcher = null,
         ConverterUsing converterUsing = ConverterUsing.All,
         ConverterUsing invokeEvents = ConverterUsing.All)
     {
         fixed (byte* b = buffer)
         {
-            var bytes = b;
-            return (T?)Deserialize(typeof(T), ref bytes, switcher, converterUsing, invokeEvents);
+            return (T?)Deserialize(typeof(T), b + index, switcher, converterUsing, invokeEvents);
         }
     }
 
-    public unsafe T? Deserialize<T>(Span<byte> buffer, SwitcherSettings? switcher = null,
+    public T? Deserialize<T>(Span<byte> buffer, SwitcherSettings? switcher = null,
         ConverterUsing converterUsing = ConverterUsing.All,
         ConverterUsing invokeEvents = ConverterUsing.All) =>
         (T?)Deserialize(typeof(T), buffer, switcher, converterUsing, invokeEvents);
@@ -137,6 +172,80 @@ public sealed class DataConverter
         ConverterUsing converterUsing = ConverterUsing.All,
         ConverterUsing invokeEvents = ConverterUsing.All) =>
         (T?)Deserialize(typeof(T), ref buffer, switcher, converterUsing, invokeEvents);
+
+
+    public unsafe object? Deserialize(Type type, Span<byte> buffer, out int length,
+        SwitcherSettings? switcher = null,
+        ConverterUsing converterUsing = ConverterUsing.All,
+        ConverterUsing invokeEvents = ConverterUsing.All)
+    {
+        fixed (byte* b = buffer)
+        {
+            return Deserialize(type, b, out length, switcher, converterUsing, invokeEvents);
+        }
+    }
+
+    public unsafe object? Deserialize(Type type, ref byte* buffer, out int length,
+        SwitcherSettings? switcher = null,
+        ConverterUsing converterUsing = ConverterUsing.All,
+        ConverterUsing invokeEvents = ConverterUsing.All) =>
+        GetDataType(RuntimeUtils.GetNotNullableType(type)).Deserialize(type, ref buffer, out length, switcher,
+            converterUsing,
+            invokeEvents);
+
+    public unsafe object? Deserialize(Type type, byte* buffer, out int length,
+        SwitcherSettings? switcher = null,
+        ConverterUsing converterUsing = ConverterUsing.All,
+        ConverterUsing invokeEvents = ConverterUsing.All) =>
+        Deserialize(type, ref buffer, out length, switcher, converterUsing,
+            invokeEvents);
+
+    public unsafe object? Deserialize(Type type, byte* buffer, int index, out int length,
+        SwitcherSettings? switcher = null,
+        ConverterUsing converterUsing = ConverterUsing.All,
+        ConverterUsing invokeEvents = ConverterUsing.All)
+    {
+        var b = buffer + index;
+        return Deserialize(type, ref b, out length, switcher, converterUsing,
+            invokeEvents);
+    }
+
+    public unsafe object? Deserialize(Type type, byte[] buffer, int index, out int length,
+        SwitcherSettings? switcher = null,
+        ConverterUsing converterUsing = ConverterUsing.All,
+        ConverterUsing invokeEvents = ConverterUsing.All)
+    {
+        fixed (byte* b = buffer)
+        {
+            return Deserialize(type, b + index, 0, out length, switcher, converterUsing, invokeEvents);
+        }
+    }
+
+    public T? Deserialize<T>(byte[] buffer, out int length, SwitcherSettings? switcher = null,
+        ConverterUsing converterUsing = ConverterUsing.All,
+        ConverterUsing invokeEvents = ConverterUsing.All) =>
+        Deserialize<T>(buffer, 0, out length, switcher, converterUsing, invokeEvents);
+
+    public unsafe T? Deserialize<T>(byte[] buffer, int index, out int length, SwitcherSettings? switcher = null,
+        ConverterUsing converterUsing = ConverterUsing.All,
+        ConverterUsing invokeEvents = ConverterUsing.All)
+    {
+        fixed (byte* b = buffer)
+        {
+            return (T?)Deserialize(typeof(T), b + index, out length, switcher, converterUsing, invokeEvents);
+        }
+    }
+
+    public T? Deserialize<T>(Span<byte> buffer, out int length, SwitcherSettings? switcher = null,
+        ConverterUsing converterUsing = ConverterUsing.All,
+        ConverterUsing invokeEvents = ConverterUsing.All) =>
+        (T?)Deserialize(typeof(T), buffer, out length, switcher, converterUsing, invokeEvents);
+
+    public unsafe T? Deserialize<T>(ref byte* buffer, out int length, SwitcherSettings? switcher = null,
+        ConverterUsing converterUsing = ConverterUsing.All,
+        ConverterUsing invokeEvents = ConverterUsing.All) =>
+        (T?)Deserialize(typeof(T), ref buffer, out length, switcher, converterUsing, invokeEvents);
+
 
     public DataConverter RegisterConverter<T>(bool replaceIfRegistered = false) where T : IConverterBase, new() =>
         RegisterConverter(new T
@@ -173,8 +282,9 @@ public sealed class DataConverter
         type = GetPrimitiveType(type);
         if (_primitiveConverters.TryGetValue(type, out var converter)) return converter;
 
-        foreach (var c in _converters)
+        for (var i = 0; i < _converters.Count; i++)
         {
+            var c = _converters[i];
             if (!c.ImplementationType.IsAssignableFrom(type)) continue;
             return c;
         }
@@ -212,7 +322,7 @@ public sealed class DataConverter
         *buffer = (byte)info;
     }
 
-    public byte[] FlushInfo(byte[] buffer, int index, bool compressed, bool isNull)
+    private byte[] WriteObjectInfo(byte[] buffer, int index, bool compressed, bool isNull)
     {
         var info = ObjectInfo.None;
         if (compressed) info |= ObjectInfo.Compressed;
@@ -221,7 +331,9 @@ public sealed class DataConverter
         return buffer;
     }
 
-    public int SizeOf(object value, bool compressed) => GetDataType(value.GetType()).GetSize(value, compressed);
+    public int SizeOf(object? value, bool compressed) =>
+        value is null ? OBJECT_INFO_LENGTH : GetDataType(value.GetType()).GetSize(value, compressed);
+
     public int SizeOf<T>(T value, bool compressed) => GetDataType(typeof(T)).GetSize(value, compressed);
     public int SizeOfDefault<T>(int count = 1) => GetDataType(typeof(T)).GetSize(default(T), false) * count;
 

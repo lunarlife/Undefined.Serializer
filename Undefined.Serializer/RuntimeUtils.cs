@@ -1,18 +1,16 @@
 using System.Collections;
 using System.Reflection;
 using System.Reflection.Emit;
-using System.Runtime.CompilerServices;
 using Undefined.Serializer.Exceptions;
 
 namespace Undefined.Serializer;
 
-public delegate T ActivatorFunc<out T>(params object[] parameters) where T : new();
-
-public delegate void FieldSetter(ref object obj, object value);
+public delegate void FieldSetter(ref object obj, object? value);
 
 public static class RuntimeUtils
 {
-    public static Array GetListUnderlyingArray(IList list) => (Array)list.GetType().GetField("_items", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(list);
+    public static Array? GetListUnderlyingArray(IList list) =>
+        (Array?)list.GetType().GetField("_items", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(list);
 
     public static Type GetNotNullableType(Type type) =>
         Nullable.GetUnderlyingType(type) ?? type;
@@ -22,10 +20,6 @@ public static class RuntimeUtils
     public static FieldInfo? GetBackingField(this PropertyInfo property) =>
         property.ReflectedType?.GetField(GetPropertyBackingFieldName(property.Name),
             BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Static);
-
-    public static Type? FindType(string fullName) =>
-        AppDomain.CurrentDomain.GetAssemblies().SelectMany(assembly => assembly.GetTypes())
-            .FirstOrDefault(t => fullName == t.FullName);
 
     public static ConstructorInfo? GetEmptyConstructor(Type type,
         BindingFlags flags = BindingFlags.Instance | BindingFlags.Public)
@@ -68,79 +62,6 @@ public static class RuntimeUtils
         return null;
     }
 
-    public static ConstructorInfo? GetConstructor(Type type, params Type[] ctorTypes) => GetConstructor(type,
-        BindingFlags.Instance | BindingFlags.Public, ctorTypes);
-
-    public static void InjectField(FieldInfo field, object target, object value)
-    {
-        ValidateField(field);
-        field.SetValue(target, value);
-    }
-
-    public static void InjectField(string field, object target, object value)
-    {
-        var info = target.GetType()
-            .GetField(field, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-        if (info is null) throw new RuntimeException("invalid field");
-        ValidateField(info);
-        info.SetValue(target, value);
-    }
-
-    public static bool TryInjectField(string field, object target, object value)
-    {
-        var info = target.GetType()
-            .GetField(field, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-        if (info is null) return false;
-        if (info.IsInitOnly) return false;
-        info.SetValue(target, value);
-        return true;
-    }
-
-    private static void ValidateField(FieldInfo info)
-    {
-        if (info.IsInitOnly) throw new RuntimeException("Field is init only.");
-    }
-
-    private static void ValidateProperty(PropertyInfo info)
-    {
-        if (info.SetMethod == null) throw new RuntimeException("Property set method not found.");
-    }
-
-    public static void InjectProperty(PropertyInfo prop, object target, object value)
-    {
-        prop.SetValue(target, value);
-        ValidateProperty(prop);
-    }
-
-    public static void InjectProperty(string prop, object target, object value)
-    {
-        var info = target.GetType()
-            .GetProperty(prop, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-        if (info is null) throw new RuntimeException("invalid field");
-        ValidateProperty(info);
-        info.SetValue(target, value);
-    }
-
-    public static bool TryInjectProperty(string prop, object target, object value)
-    {
-        var info = target.GetType()
-            .GetProperty(prop, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-        if (info is null) return false;
-        if (info.SetMethod == null) return false;
-        info.SetValue(target, value);
-        return true;
-    }
-
-    public static object GetUninitializedObject(Type type) => RuntimeHelpers.GetUninitializedObject(type);
-    public static T GetUninitializedObject<T>() => (T)RuntimeHelpers.GetUninitializedObject(typeof(T));
-
-    public static bool TryGetAttribute<TAttribute, TFrom>(out TAttribute? attribute) where TAttribute : Attribute
-    {
-        var b = TryGetAttribute(typeof(TAttribute), typeof(TFrom), out var att);
-        attribute = (TAttribute)att!;
-        return b;
-    }
-
     public static bool TryGetAttribute<TAttribute>(MemberInfo from, out TAttribute? attribute)
         where TAttribute : Attribute
     {
@@ -164,31 +85,6 @@ public static class RuntimeUtils
                 parameters) is not { } ctor)
             throw new RuntimeException($"Constructor for type {instanceType} not found.");
         return ctor;
-    }
-
-    public static ActivatorFunc<T> IL_CreateActivatorFunction<T>(ConstructorInfo ctor) where T : new()
-    {
-        if (ctor.DeclaringType != typeof(T))
-            throw new RuntimeException($"Constructor {ctor} not for class {nameof(T)}");
-        var instanceType = typeof(T);
-        var method = new DynamicMethod($"{instanceType.FullName}_ctor", instanceType, new[] { typeof(object[]) },
-            false);
-        var generator = method.GetILGenerator();
-        generator.Emit(OpCodes.Nop);
-        var parameters = ctor.GetParameters();
-
-        for (var i = 0; i < parameters.Length; i++)
-        {
-            var t = parameters[i].ParameterType;
-            generator.Emit(OpCodes.Ldarg_0);
-            generator.Emit(OpCodes.Ldc_I4_S, i);
-            generator.Emit(OpCodes.Ldelem_Ref);
-            generator.Emit(t.IsValueType ? OpCodes.Unbox_Any : OpCodes.Castclass, t);
-        }
-
-        generator.Emit(OpCodes.Newobj, ctor);
-        generator.Emit(OpCodes.Ret);
-        return IL_CreateDelegate<ActivatorFunc<T>>(method);
     }
 
     private static DynamicMethod IL_CreateCode_Internal(Type instanceType, Type returnType, ConstructorInfo? ctor,
@@ -252,34 +148,6 @@ public static class RuntimeUtils
         params Type[] parameters) =>
         IL_CreateInstanceMethod(instanceType, null, parameters);
 
-    public static TFunc IL_CreateInstanceMethod<TFunc>(Action<ILGenerator>? beforeRet = null) where TFunc : Delegate =>
-        IL_CreateInstanceMethodAs_Internal<TFunc>(null, beforeRet);
-
-    public static TFunc IL_CreateInstanceMethodAs<TInstance, TFunc>(Action<ILGenerator>? beforeRet = null)
-        where TFunc : Delegate =>
-        IL_CreateInstanceMethodAs_Internal<TFunc>(typeof(TInstance), beforeRet);
-
-    public static TFunc IL_CreateInstanceMethodAs<TFunc>(Type instanceType, Action<ILGenerator>? beforeRet = null)
-        where TFunc : Delegate =>
-        IL_CreateInstanceMethodAs_Internal<TFunc>(instanceType, beforeRet);
-
-    private static TFunc IL_CreateInstanceMethodAs_Internal<TFunc>(Type? instanceType, Action<ILGenerator>? beforeRet)
-        where TFunc : Delegate
-    {
-        if (typeof(TFunc).GetMethod("Invoke") is not { } invokeMethod)
-            throw new RuntimeException("Delegate Invoke method not found.");
-        var returnType = invokeMethod.ReturnType;
-        if (returnType == typeof(void)) throw new RuntimeException("Return type must be not a void.");
-        instanceType ??= returnType;
-        var infos = invokeMethod.GetParameters();
-        var parameters = new Type[infos.Length];
-        for (var i = 0; i < infos.Length; i++) parameters[i] = infos[i].ParameterType;
-        var ctor = IL_GetCtor(instanceType, parameters);
-        var dynamicMethod = IL_CreateCode_Internal(instanceType, returnType,
-            ctor, parameters, beforeRet);
-        return IL_CreateDelegate<TFunc>(dynamicMethod);
-    }
-
 
     public static Func<object> IL_CreateInstanceMethodAsObject(Type instanceType, Action<ILGenerator>? beforeRet) =>
         IL_CreateDelegate<Func<object>>(IL_CreateCode_Internal(instanceType, typeof(object),
@@ -289,9 +157,6 @@ public static class RuntimeUtils
     public static Func<object> IL_CreateInstanceMethodAsObject(Type instanceType) =>
         IL_CreateInstanceMethodAsObject(instanceType, null);
 
-
-    public static MethodInfo IL_CreateInstanceMethod<TResult>(params Type[] parameters) =>
-        IL_CreateInstanceMethod(typeof(TResult), parameters);
 
     public static FieldSetter IL_CreateFieldSetter(FieldInfo info)
     {

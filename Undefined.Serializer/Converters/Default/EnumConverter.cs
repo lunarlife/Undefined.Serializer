@@ -11,6 +11,7 @@ public sealed unsafe class EnumConverter : ICompressibleConverter<Enum>
     public Enum? Deserialize(Type type, ref byte* buffer, bool compressed) =>
         (Enum)Enum.ToObject(type,
             Converter.Deserialize(Enum.GetUnderlyingType(type), ref buffer)!);
+
     public int GetSize(Enum value, bool compressed) =>
         Converter.SizeOf(Convert.ChangeType(value, value.GetTypeCode()), compressed);
 }

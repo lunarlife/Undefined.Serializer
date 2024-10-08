@@ -2,8 +2,8 @@ namespace Undefined.Serializer.Converters;
 
 public abstract unsafe class PrimitiveConverter<T> : IConverter<T> where T : unmanaged
 {
-    public DataConverter Converter { get; init; }
     private readonly int _fSize = sizeof(T);
+    public DataConverter Converter { get; init; }
 
 
     public void Serialize(T o, ref byte* buffer)
@@ -24,8 +24,8 @@ public abstract unsafe class PrimitiveConverter<T> : IConverter<T> where T : unm
 
 public abstract unsafe class PrimitiveCompressibleConverter<T> : ICompressibleConverter<T> where T : unmanaged
 {
-    public DataConverter Converter { get; init; }
     private readonly int _fSize = sizeof(T);
+    public DataConverter Converter { get; init; }
 
 
     public void Serialize(T o, ref byte* buffer, bool compressed)
@@ -46,9 +46,9 @@ public abstract unsafe class PrimitiveCompressibleConverter<T> : ICompressibleCo
         return value;
     }
 
+    public int GetSize(T value, bool compressed) => compressed ? GetSize(value) : _fSize;
+
     protected abstract void Serialize(T o, ref byte* buffer);
     protected abstract T Deserialize(Type type, ref byte* buffer);
     protected abstract int GetSize(T value);
-
-    public int GetSize(T value, bool compressed) => compressed ? GetSize(value) : _fSize;
 }

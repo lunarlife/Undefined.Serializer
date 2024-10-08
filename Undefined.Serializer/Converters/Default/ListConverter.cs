@@ -1,5 +1,4 @@
 using System.Collections;
-using System.Reflection;
 using System.Runtime.CompilerServices;
 using Undefined.Serializer.Exceptions;
 
@@ -18,7 +17,11 @@ public sealed unsafe class ListConverter : ICompressibleConverter<IList>
         if (type.IsGenericType && type.GetGenericArguments()[0] == typeof(byte))
         {
             fixed (byte* bytes =
-                       (byte[])RuntimeUtils.GetListUnderlyingArray(o)) Unsafe.CopyBlock(buffer, bytes, (uint)o.Count);
+                       (byte[])RuntimeUtils.GetListUnderlyingArray(o))
+            {
+                Unsafe.CopyBlock(buffer, bytes, (uint)o.Count);
+            }
+
             buffer += o.Count;
             return;
         }
@@ -51,7 +54,11 @@ public sealed unsafe class ListConverter : ICompressibleConverter<IList>
         if (arrayType == typeof(byte))
         {
             var array = new byte[listSize];
-            fixed (byte* b = array) Unsafe.CopyBlock(b, buffer, (uint)listSize);
+            fixed (byte* b = array)
+            {
+                Unsafe.CopyBlock(b, buffer, (uint)listSize);
+            }
+
             var deserialize = new List<byte>(array);
             buffer += listSize;
             return deserialize;
@@ -61,16 +68,11 @@ public sealed unsafe class ListConverter : ICompressibleConverter<IList>
         if (arrayType is { IsAbstract: false, IsInterface: false })
         {
             var dataType = Converter.GetDataType(arrayType);
-            for (var i = 0; i < listSize; i++)
-            {
-                list.Add(dataType.Deserialize(arrayType, ref buffer));
-            }
+            for (var i = 0; i < listSize; i++) list.Add(dataType.Deserialize(arrayType, ref buffer));
         }
         else
             for (var i = 0; i < listSize; i++)
-            {
                 list.Add(Converter.Deserialize(arrayType, ref buffer));
-            }
 
         return list;
     }
@@ -85,8 +87,10 @@ public sealed unsafe class ListConverter : ICompressibleConverter<IList>
         if (arrayType is { IsAbstract: false, IsInterface: false })
         {
             var dataType = Converter.GetDataType(arrayType);
-            foreach (var obj in value)
-                size += dataType.GetSize(obj, compressed);
+            if (compressed)
+                foreach (var obj in value)
+                    size += dataType.GetSize(obj, compressed);
+            else size += value.Count > 0 ? dataType.GetSize(value[0], compressed) * value.Count : 0;
         }
         else
             foreach (var obj in value)

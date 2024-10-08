@@ -23,6 +23,7 @@ public interface IConverter<T> : IConverter
 
     unsafe object? IConverter.Deserialize(Type type, ref byte* buffer) =>
         Deserialize(type, ref buffer);
+
     int IConverter.GetSize(object o) => GetSize((T)o);
 
     public int GetSize(T value);

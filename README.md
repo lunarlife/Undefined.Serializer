@@ -1,7 +1,8 @@
 EXAMPLE:
+
 ```csharp
 [ConverterParams(IncludeDataType.Field | IncludeDataType.Property)] //BY DEFAULT
-    private struct ExampleStruct : IDeserializeHandler, ISerializeHandler
+    public struct ExampleStruct : IDeserializeHandler, ISerializeHandler
     {
         private long[,] _array;
 

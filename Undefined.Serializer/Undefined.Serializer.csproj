@@ -5,9 +5,9 @@
         <Nullable>enable</Nullable>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
         <LangVersion>preview</LangVersion>
-        <TargetFrameworks>net8.0;netstandard2.1;net6.0</TargetFrameworks>
+        <TargetFrameworks>net6.0;net8.0;netstandard2.1;net9.0</TargetFrameworks>
         <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
-        <Version>1.0.0</Version>
+        <Version>2.1.0</Version>
         <Title>Objects Serializer</Title>
         <Description>Fast and low-level util for objects serialization/deserialization in/from bytes.</Description>
         <Copyright>Copyright © LunarLife 2023</Copyright>
@@ -16,7 +16,7 @@
         <PackageReadmeFile>README.md</PackageReadmeFile>
         <RepositoryUrl>https://github.com/lunarlife/Undefined.Serializer</RepositoryUrl>
         <RepositoryType>https://github.com/lunarlife/Undefined.Serializer</RepositoryType>
-        <PackageTags>convertor serialize deserialize bytes byte bit undefined</PackageTags>
+        <PackageTags>convertor serialize deserialize bytes bit undefined</PackageTags>
         <AssemblyVersion>1.0.0</AssemblyVersion>
         <FileVersion>1.00</FileVersion>
         <NeutralLanguage>en-001</NeutralLanguage>
@@ -26,6 +26,7 @@
         <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="6.0.0"/>
         <None Include="../LICENSE.txt" Pack="true" PackagePath=""/>
         <None Include="../README.md" Pack="true" PackagePath=""/>
+        <PackageReference Include="Undefined.Verify" Version="3.0.1"/>
     </ItemGroup>
 
     <Target Name="PostBuild" AfterTargets="PostBuildEvent">

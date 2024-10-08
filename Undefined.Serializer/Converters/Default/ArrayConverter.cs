@@ -10,19 +10,13 @@ public sealed unsafe class ArrayConverter : ICompressibleConverter<Array>
         var rank = o.Rank;
         if (arrayType is null) throw new ArgumentException("Array has unknown type.");
         var lengths = new int[rank];
-        for (var i = 0; i < rank; i++)
-        {
-            Converter.Serialize(lengths[i] = o.GetLength(i), ref buffer, compressed);
-        }
+        for (var i = 0; i < rank; i++) Converter.Serialize(lengths[i] = o.GetLength(i), ref buffer, compressed);
 
         var indices = GetIndicesArray(rank);
         if (arrayType is { IsAbstract: false, IsInterface: false })
         {
             var dataType = Converter.GetDataType(arrayType);
-            while (IterateArray(indices, lengths))
-            {
-                dataType.Serialize(o.GetValue(indices), ref buffer, compressed);
-            }
+            while (IterateArray(indices, lengths)) dataType.Serialize(o.GetValue(indices), ref buffer, compressed);
             return;
         }
 
@@ -34,7 +28,7 @@ public sealed unsafe class ArrayConverter : ICompressibleConverter<Array>
         }
     }
 
-    public Array? Deserialize(Type type, ref byte* buffer,  bool compressed)
+    public Array? Deserialize(Type type, ref byte* buffer, bool compressed)
     {
         var dimensions = type.GetArrayRank();
         var lengths = new int[dimensions];
@@ -54,17 +48,13 @@ public sealed unsafe class ArrayConverter : ICompressibleConverter<Array>
         {
             var dataType = Converter.GetDataType(arrayType);
             while (IterateArray(indices, lengths))
-            {
                 array.SetValue(dataType.Deserialize(arrayType, ref buffer),
                     indices);
-            }
         }
         else
             while (IterateArray(indices, lengths))
-            {
                 array.SetValue(Converter.Deserialize(arrayType, ref buffer),
                     indices);
-            }
 
         return array;
     }
@@ -74,14 +64,25 @@ public sealed unsafe class ArrayConverter : ICompressibleConverter<Array>
     {
         var rank = array.Rank;
         var size = 0;
-        for (var i = 0; i < rank; i++) size += Converter.SizeOf(array.GetLength(i), compressed);
+        var length = 0;
+        for (var i = 0; i < rank; i++)
+        {
+            var l = array.GetLength(i);
+            size += Converter.SizeOf(l, compressed);
+            if (length == 0)
+                length = l;
+            else length *= l;
+        }
+
         var arrayType = array.GetType().GetElementType();
         if (arrayType is null) throw new ArgumentException("Array has unknown type.");
         if (arrayType is { IsAbstract: false, IsInterface: false })
         {
             var dataType = Converter.GetDataType(arrayType);
-            foreach (var obj in array)
-                size += dataType.GetSize(obj, compressed);
+            if (compressed)
+                foreach (var obj in array)
+                    size += dataType.GetSize(obj, compressed);
+            else size += length > 0 ? dataType.GetSize(array.GetValue(new int[array.Rank]), false) * length : 0;
         }
         else
             foreach (var obj in array)

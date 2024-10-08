@@ -8,10 +8,11 @@ internal class DataField
 {
     private static readonly Type FieldDataType = typeof(Data<>);
     private static readonly Type NullableDataType = typeof(Nullable<>);
-    private readonly FieldSetter _setter;
+    private readonly FieldInfo _fieldInfo;
     private readonly PropertyInfo? _isMustSerializeProperty;
+    private readonly FieldSetter _setter;
     private readonly FieldInfo? _valueField;
-    private FieldInfo _fieldInfo;
+    private readonly FieldSetter? _valueFieldSetter;
     public DataType FieldCachedType { get; }
     public int? Switcher { get; }
     public Type FieldType { get; }
@@ -19,11 +20,12 @@ internal class DataField
     public bool IsDataField => DataFieldId is not null;
     public int? DataFieldId { get; }
 
-    public DataField(string name, DataType type, int? switcher, FieldInfo fieldInfo, int dataFieldId)
+    public string Name { get; }
+
+    public DataField(string name, DataConverter converter, int? switcher, FieldInfo fieldInfo, int dataFieldId)
     {
         _fieldInfo = fieldInfo;
         Name = name;
-        FieldCachedType = type;
         Switcher = switcher;
         var t = fieldInfo.FieldType;
         if (t.IsGenericType)
@@ -51,13 +53,14 @@ internal class DataField
                 _isMustSerializeProperty =
                     t.GetProperty("IsMustSerialize", BindingFlags.Instance | BindingFlags.NonPublic);
                 _valueField = t.GetField("_value", BindingFlags.Instance | BindingFlags.NonPublic);
+                _valueFieldSetter = RuntimeUtils.IL_CreateFieldSetter(_valueField!);
             }
             else FieldType = t;
         }
         else FieldType = t;
 
-        if (!IsDataField)
-            _setter = RuntimeUtils.IL_CreateFieldSetter(fieldInfo);
+        FieldCachedType = converter.GetDataType(FieldType);
+        _setter = RuntimeUtils.IL_CreateFieldSetter(fieldInfo);
     }
 
     public bool IsMustSerialize(object o, SwitcherSettings? switcherSettings)
@@ -72,8 +75,6 @@ internal class DataField
         return !IsDataField ||
                (bool)_isMustSerializeProperty!.GetValue(_fieldInfo.GetValue(o))!;
     }
-
-    public string Name { get; }
 
     public int GetSize(object o, bool compressed)
     {
@@ -96,7 +97,7 @@ internal class DataField
 
         var data = _fieldInfo.GetValue(obj)!;
         if (!(bool)_isMustSerializeProperty!.GetValue(data)!) return;
-        _valueField!.SetValue(data, value);
+        _valueFieldSetter!(ref data, value);
         _setter(ref obj, data);
     }
 }

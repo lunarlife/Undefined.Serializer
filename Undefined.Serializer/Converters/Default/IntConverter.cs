@@ -5,6 +5,7 @@ namespace Undefined.Serializer.Converters.Default;
 public sealed class IntConverter : PrimitiveCompressibleConverter<int>
 {
     private const int F_SIZE = 4;
+
     protected override unsafe int Deserialize(Type type, ref byte* buffer)
     {
         var bitB = *buffer;
@@ -12,7 +13,6 @@ public sealed class IntConverter : PrimitiveCompressibleConverter<int>
         Span<byte> bytes = stackalloc byte[F_SIZE];
         var k = 1;
         for (var i = 0; i < F_SIZE; i++)
-        {
             if (((bitB >> i) & 1) != 0)
                 bytes[i] = 0;
             else if (((bitB >> (i + F_SIZE)) & 1) != 0)
@@ -22,7 +22,7 @@ public sealed class IntConverter : PrimitiveCompressibleConverter<int>
                 bytes[i] = *(buffer + k);
                 k++;
             }
-        }
+
         buffer += k;
         return Unsafe.ReadUnaligned<int>(ref bytes[0]);
     }
@@ -34,7 +34,6 @@ public sealed class IntConverter : PrimitiveCompressibleConverter<int>
         Unsafe.As<byte, int>(ref data[0]) = o;
         var k = 1;
         for (var i = 0; i < F_SIZE; i++)
-        {
             switch (data[i])
             {
                 case 0:
@@ -50,7 +49,6 @@ public sealed class IntConverter : PrimitiveCompressibleConverter<int>
                     break;
                 }
             }
-        }
 
         buffer += k;
     }

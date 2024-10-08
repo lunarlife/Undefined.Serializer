@@ -12,7 +12,6 @@ public sealed unsafe class LongConverter : PrimitiveCompressibleConverter<long>
         Unsafe.As<byte, long>(ref data[0]) = o;
         var k = 1;
         for (var i = 0; i < F_SIZE; i++)
-        {
             if (data[i] == 0)
                 *buffer = (byte)(*buffer | (1 << i));
             else
@@ -20,7 +19,6 @@ public sealed unsafe class LongConverter : PrimitiveCompressibleConverter<long>
                 *(buffer + k) = data[i];
                 k++;
             }
-        }
 
         buffer += k;
     }
@@ -32,7 +30,6 @@ public sealed unsafe class LongConverter : PrimitiveCompressibleConverter<long>
         Span<byte> bytes = stackalloc byte[F_SIZE];
         var k = 1;
         for (var i = 0; i < F_SIZE; i++)
-        {
             if (((bitB >> i) & 1) != 0)
                 bytes[i] = 0;
             else
@@ -40,7 +37,6 @@ public sealed unsafe class LongConverter : PrimitiveCompressibleConverter<long>
                 bytes[i] = *(buffer + k);
                 k++;
             }
-        }
 
         buffer += k;
         return Unsafe.ReadUnaligned<long>(ref bytes[0]);
